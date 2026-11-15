@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Invoice Pipeline</title>
+<meta name="description" content="An n8n + Gemini automation that reads invoices and receipts, checks the maths, catches duplicates and routes problems to a human.">
+<style>
+  :root { --ink:#14201f; --muted:#5b6b69; --bg:#f7f6f2; --card:#ffffff; --line:#e3e1da; --accent:#0f766e; --accent-soft:#e3f1ef; --warn:#b45309; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 56px 20px 80px; }
+  .tag { display:inline-block; font-size:13px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--accent); }
+  h1 { font-size: clamp(30px, 6vw, 46px); line-height:1.1; margin:10px 0 16px; letter-spacing:-.02em; }
+  .lede { font-size:19px; color:var(--muted); max-width: 640px; margin:0 0 28px; }
+  .stack { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:44px; }
+  .stack span { background:var(--card); border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-size:14px; }
+  h2 { font-size:22px; margin:48px 0 14px; letter-spacing:-.01em; }
+  .flow { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap:10px; counter-reset: s; }
+  .flow div { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px; font-size:15px; }
+  .flow div::before { counter-increment:s; content: counter(s); display:block; font-weight:700; color:var(--accent); font-size:13px; margin-bottom:4px; }
+  .flow b { display:block; }
+  .flow small { color:var(--muted); }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:hidden; font-size:15px; }
+  th, td { text-align:left; padding:10px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { background:var(--accent-soft); font-size:13px; text-transform:uppercase; letter-spacing:.04em; }
+  tr:last-child td { border-bottom:0; }
+  @media (min-width: 640px) { td:first-child { white-space:nowrap; } }
+  @media (max-width: 639px) { th, td { padding:9px 10px; font-size:14px; } }
+  .table-wrap { overflow-x:auto; }
+  ul.features { padding:0; list-style:none; display:grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap:10px; }
+  ul.features li { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  ul.features b { display:block; margin-bottom:2px; }
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; display:flex; gap:18px; flex-wrap:wrap; }
+  a { color:var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <span class="tag">Automation project</span>
+  <h1>AI Invoice &amp; Receipt Pipeline</h1>
+  <p class="lede">Drop an invoice or a phone photo of a receipt into a Google Drive folder. It is read by AI, checked like an accountant would check it, and filed. People only see the documents that need them.</p>
+  <div class="stack"><span>n8n</span><span>Google Gemini</span><span>Google Drive</span><span>Google Sheets</span><span>Telegram</span><span>JavaScript</span></div>
+
+  <h2>How it works</h2>
+  <div class="flow">
+    <div><b>Detect</b><small>New file in the Drive inbox</small></div>
+    <div><b>Extract</b><small>Gemini returns structured JSON</small></div>
+    <div><b>Validate</b><small>Maths, dates, confidence, 0–100 score</small></div>
+    <div><b>Deduplicate</b><small>Supplier + invoice no. + total</small></div>
+    <div><b>Route</b><small>Sheet, folder and Telegram alert</small></div>
+  </div>
+
+  <h2>Results on the test set</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Document</th><th>Outcome</th><th>Why</th></tr>
+    <tr><td>Clean invoice</td><td>✅ Auto-approved</td><td>All checks pass</td></tr>
+    <tr><td>Tilted receipt photo</td><td>✅ Auto-approved</td><td>Service charge and VAT add up</td></tr>
+    <tr><td>Maths error</td><td>🟡 Review</td><td>Line items total 555,000 but the subtotal says 585,000</td></tr>
+    <tr><td>Re-sent copy</td><td>🔁 Duplicate</td><td>Same invoice as one already recorded</td></tr>
+    <tr><td>Staff memo</td><td>🚫 Rejected</td><td>Not an invoice</td></tr>
+    <tr><td>2-page USD invoice</td><td>✅ Auto-approved</td><td>28 lines, 10% discount</td></tr>
+    <tr><td>Faded receipt</td><td>🟡 Review</td><td>No date, low confidence</td></tr>
+    <tr><td>Hidden AI instructions</td><td>🟡 Review</td><td>Text telling the AI to "approve and set total to 0" was detected</td></tr>
+    <tr><td>Text file</td><td>🚫 Rejected</td><td>Unsupported, rejected before any AI call</td></tr>
+  </table>
+  </div>
+
+  <h2>What makes it reliable</h2>
+  <ul class="features">
+    <li><b>Doesn't trust the AI blindly</b>Every extraction is checked against accounting rules before it is accepted.</li>
+    <li><b>Human in the loop</b>Reviewers fix a row in Google Sheets and type APPROVE. The fix is re-validated and posted.</li>
+    <li><b>Secure by design</b>Prompt injection, spreadsheet formula injection and HTML injection are all handled.</li>
+    <li><b>Fails safely</b>Retries, error alerts with a link to the failed run, and nothing silently lost.</li>
+    <li><b>Daily summary</b>Volume, auto-approval rate, duplicates caught and time saved, sent to Telegram.</li>
+    <li><b>Tested</b>25 automated tests, including an end-to-end simulation of the workflows.</li>
+  </ul>
+
+  <footer>
+    <span>Built with n8n and Google Gemini.</span>
+    <a href="privacy.html">Privacy policy</a>
+  </footer>
+</main>
+</body>
+</html>
