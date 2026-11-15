@@ -1,0 +1,57 @@
+{
+  "document_type": "receipt",
+  "is_legible": true,
+  "supplier": {
+    "name": "Bluewater Cafe",
+    "address": "12 Admiralty Way, Lekki Phase 1",
+    "tax_id": "30551234-0001",
+    "email": null,
+    "phone": null
+  },
+  "customer": {
+    "name": null,
+    "address": null,
+    "tax_id": null
+  },
+  "invoice_number": "R-88213",
+  "document_date": "2026-11-03",
+  "due_date": null,
+  "currency": "NGN",
+  "line_items": [
+    {
+      "description": "Jollof rice",
+      "quantity": 2,
+      "unit_price": 3500,
+      "amount": 7000
+    },
+    {
+      "description": "Grilled chicken",
+      "quantity": 2,
+      "unit_price": 4000,
+      "amount": 8000
+    },
+    {
+      "description": "Chapman",
+      "quantity": 2,
+      "unit_price": 2500,
+      "amount": 5000
+    }
+  ],
+  "subtotal": 20000.0,
+  "discount": null,
+  "shipping": 2000.0,
+  "tax_amount": 1500.0,
+  "tax_rate_percent": 7.5,
+  "total": 23500.0,
+  "amount_paid": 23500.0,
+  "payment_method": "Card",
+  "confidence": {
+    "overall": 0.93,
+    "supplier_name": 0.95,
+    "invoice_number": 0.92,
+    "document_date": 0.9,
+    "total": 0.96
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": "Service charge recorded as shipping/charges. Date 03/11/2026 read day-first."
+}

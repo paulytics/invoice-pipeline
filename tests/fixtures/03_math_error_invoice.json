@@ -1,0 +1,57 @@
+{
+  "document_type": "invoice",
+  "is_legible": true,
+  "supplier": {
+    "name": "Northwind Haulage Ltd",
+    "address": "Plot 5 Trans-Amadi Industrial Layout, Port Harcourt",
+    "tax_id": "10933412-0001",
+    "email": "accounts@northwind-haulage.example",
+    "phone": "+234 803 555 0199"
+  },
+  "customer": {
+    "name": "Harbourline Consulting Ltd",
+    "address": "14 Marina Road, Lagos Island, Lagos",
+    "tax_id": null
+  },
+  "invoice_number": "NWH-7781",
+  "document_date": "2026-10-30",
+  "due_date": "2026-11-14",
+  "currency": "NGN",
+  "line_items": [
+    {
+      "description": "Freight: Lagos to Abuja (20ft container)",
+      "quantity": 1,
+      "unit_price": 450000,
+      "amount": 450000
+    },
+    {
+      "description": "Loading & handling",
+      "quantity": 3,
+      "unit_price": 25000,
+      "amount": 75000
+    },
+    {
+      "description": "Goods-in-transit insurance",
+      "quantity": 1,
+      "unit_price": 30000,
+      "amount": 30000
+    }
+  ],
+  "subtotal": 585000.0,
+  "discount": null,
+  "shipping": null,
+  "tax_amount": 43875.0,
+  "tax_rate_percent": 7.5,
+  "total": 628875.0,
+  "amount_paid": null,
+  "payment_method": "Bank transfer",
+  "confidence": {
+    "overall": 0.97,
+    "supplier_name": 0.98,
+    "invoice_number": 0.97,
+    "document_date": 0.97,
+    "total": 0.98
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": null
+}

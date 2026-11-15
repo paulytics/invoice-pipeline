@@ -1,0 +1,63 @@
+{
+  "document_type": "invoice",
+  "is_legible": true,
+  "supplier": {
+    "name": "Kestrel Office Supplies Ltd",
+    "address": "22 Allen Avenue, Ikeja, Lagos",
+    "tax_id": "21458877-0001",
+    "email": "billing@kestrel-office.example",
+    "phone": "+234 801 555 0142"
+  },
+  "customer": {
+    "name": "Harbourline Consulting Ltd",
+    "address": "14 Marina Road, Lagos Island, Lagos",
+    "tax_id": null
+  },
+  "invoice_number": "INV-2026-0412",
+  "document_date": "2026-10-28",
+  "due_date": "2026-11-27",
+  "currency": "NGN",
+  "line_items": [
+    {
+      "description": "A4 copier paper, 80gsm (ream)",
+      "quantity": 20,
+      "unit_price": 6500,
+      "amount": 130000
+    },
+    {
+      "description": "Toner cartridge HP 26A",
+      "quantity": 4,
+      "unit_price": 85000,
+      "amount": 340000
+    },
+    {
+      "description": "Heavy-duty stapler",
+      "quantity": 5,
+      "unit_price": 4200,
+      "amount": 21000
+    },
+    {
+      "description": "Desk organiser, mesh",
+      "quantity": 6,
+      "unit_price": 7500,
+      "amount": 45000
+    }
+  ],
+  "subtotal": 536000,
+  "discount": null,
+  "shipping": null,
+  "tax_amount": 40200.0,
+  "tax_rate_percent": 7.5,
+  "total": 576200.0,
+  "amount_paid": null,
+  "payment_method": "Bank transfer",
+  "confidence": {
+    "overall": 0.97,
+    "supplier_name": 0.98,
+    "invoice_number": 0.97,
+    "document_date": 0.97,
+    "total": 0.98
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": null
+}

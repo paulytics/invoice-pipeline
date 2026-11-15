@@ -1,0 +1,57 @@
+{
+  "document_type": "receipt",
+  "is_legible": true,
+  "supplier": {
+    "name": "QuickMart",
+    "address": "Shop 4, Bode Thomas St",
+    "tax_id": null,
+    "email": null,
+    "phone": null
+  },
+  "customer": {
+    "name": null,
+    "address": null,
+    "tax_id": null
+  },
+  "invoice_number": null,
+  "document_date": null,
+  "due_date": null,
+  "currency": "NGN",
+  "line_items": [
+    {
+      "description": "Indomie carton (40)",
+      "quantity": 1,
+      "unit_price": 9500,
+      "amount": 9500
+    },
+    {
+      "description": "Peak milk tin",
+      "quantity": 2,
+      "unit_price": 1200,
+      "amount": 2400
+    },
+    {
+      "description": "Bread loaf",
+      "quantity": 1,
+      "unit_price": 850,
+      "amount": 850
+    }
+  ],
+  "subtotal": null,
+  "discount": null,
+  "shipping": null,
+  "tax_amount": null,
+  "tax_rate_percent": null,
+  "total": 12750.0,
+  "amount_paid": 13000.0,
+  "payment_method": "Cash",
+  "confidence": {
+    "overall": 0.72,
+    "supplier_name": 0.85,
+    "invoice_number": 0.2,
+    "document_date": 0.1,
+    "total": 0.8
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": "Faded image. No date or receipt number printed. Amount paid 13,000 with 250 change."
+}

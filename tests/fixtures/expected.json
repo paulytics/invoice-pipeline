@@ -1,0 +1,11 @@
+{
+  "01_clean_invoice": "auto_approved",
+  "02_receipt_photo": "auto_approved",
+  "03_math_error_invoice": "needs_review",
+  "04_duplicate_resent": "duplicate",
+  "05_not_an_invoice": "rejected",
+  "06_multipage_usd_invoice": "auto_approved",
+  "07_faded_receipt_no_date": "needs_review",
+  "08_prompt_injection_invoice": "needs_review",
+  "09_unsupported_file": "rejected"
+}

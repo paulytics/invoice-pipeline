@@ -1,0 +1,207 @@
+{
+  "document_type": "invoice",
+  "is_legible": true,
+  "supplier": {
+    "name": "Brightline Software Inc.",
+    "address": "500 Market Street, Suite 300, San Francisco, CA",
+    "tax_id": "EIN 84-3301927",
+    "email": "ar@brightline-software.example",
+    "phone": "+1 415 555 0170"
+  },
+  "customer": {
+    "name": "Harbourline Consulting Ltd",
+    "address": "14 Marina Road, Lagos Island, Lagos",
+    "tax_id": null
+  },
+  "invoice_number": "BL-2026-1093",
+  "document_date": "2026-10-15",
+  "due_date": "2026-11-14",
+  "currency": "USD",
+  "line_items": [
+    {
+      "description": "Annual licence, Analytics Pro (seat) #1",
+      "quantity": 2,
+      "unit_price": 99.0,
+      "amount": 198.0
+    },
+    {
+      "description": "Onboarding workshop (half day) #2",
+      "quantity": 3,
+      "unit_price": 750.0,
+      "amount": 2250.0
+    },
+    {
+      "description": "Premium support (month) #3",
+      "quantity": 1,
+      "unit_price": 49.0,
+      "amount": 49.0
+    },
+    {
+      "description": "API usage block, 1M calls #4",
+      "quantity": 5,
+      "unit_price": 49.0,
+      "amount": 245.0
+    },
+    {
+      "description": "Data connector: PostgreSQL #5",
+      "quantity": 2,
+      "unit_price": 480.0,
+      "amount": 960.0
+    },
+    {
+      "description": "Data connector: Salesforce #6",
+      "quantity": 1,
+      "unit_price": 480.0,
+      "amount": 480.0
+    },
+    {
+      "description": "Custom report build (hour) #7",
+      "quantity": 1,
+      "unit_price": 49.0,
+      "amount": 49.0
+    },
+    {
+      "description": "SSO configuration #8",
+      "quantity": 1,
+      "unit_price": 250.0,
+      "amount": 250.0
+    },
+    {
+      "description": "Training video library access #9",
+      "quantity": 3,
+      "unit_price": 49.0,
+      "amount": 147.0
+    },
+    {
+      "description": "Sandbox environment (month) #10",
+      "quantity": 1,
+      "unit_price": 49.0,
+      "amount": 49.0
+    },
+    {
+      "description": "Annual licence, Analytics Pro (seat) #11",
+      "quantity": 5,
+      "unit_price": 250.0,
+      "amount": 1250.0
+    },
+    {
+      "description": "Onboarding workshop (half day) #12",
+      "quantity": 1,
+      "unit_price": 1200.0,
+      "amount": 1200.0
+    },
+    {
+      "description": "Premium support (month) #13",
+      "quantity": 5,
+      "unit_price": 49.0,
+      "amount": 245.0
+    },
+    {
+      "description": "API usage block, 1M calls #14",
+      "quantity": 1,
+      "unit_price": 750.0,
+      "amount": 750.0
+    },
+    {
+      "description": "Data connector: PostgreSQL #15",
+      "quantity": 10,
+      "unit_price": 480.0,
+      "amount": 4800.0
+    },
+    {
+      "description": "Data connector: Salesforce #16",
+      "quantity": 1,
+      "unit_price": 480.0,
+      "amount": 480.0
+    },
+    {
+      "description": "Custom report build (hour) #17",
+      "quantity": 5,
+      "unit_price": 250.0,
+      "amount": 1250.0
+    },
+    {
+      "description": "SSO configuration #18",
+      "quantity": 1,
+      "unit_price": 99.0,
+      "amount": 99.0
+    },
+    {
+      "description": "Training video library access #19",
+      "quantity": 1,
+      "unit_price": 480.0,
+      "amount": 480.0
+    },
+    {
+      "description": "Sandbox environment (month) #20",
+      "quantity": 1,
+      "unit_price": 120.0,
+      "amount": 120.0
+    },
+    {
+      "description": "Annual licence, Analytics Pro (seat) #21",
+      "quantity": 3,
+      "unit_price": 99.0,
+      "amount": 297.0
+    },
+    {
+      "description": "Onboarding workshop (half day) #22",
+      "quantity": 5,
+      "unit_price": 49.0,
+      "amount": 245.0
+    },
+    {
+      "description": "Premium support (month) #23",
+      "quantity": 5,
+      "unit_price": 120.0,
+      "amount": 600.0
+    },
+    {
+      "description": "API usage block, 1M calls #24",
+      "quantity": 5,
+      "unit_price": 1200.0,
+      "amount": 6000.0
+    },
+    {
+      "description": "Data connector: PostgreSQL #25",
+      "quantity": 10,
+      "unit_price": 99.0,
+      "amount": 990.0
+    },
+    {
+      "description": "Data connector: Salesforce #26",
+      "quantity": 1,
+      "unit_price": 480.0,
+      "amount": 480.0
+    },
+    {
+      "description": "Custom report build (hour) #27",
+      "quantity": 5,
+      "unit_price": 750.0,
+      "amount": 3750.0
+    },
+    {
+      "description": "SSO configuration #28",
+      "quantity": 1,
+      "unit_price": 120.0,
+      "amount": 120.0
+    }
+  ],
+  "subtotal": 27833.0,
+  "discount": 2783.3,
+  "shipping": null,
+  "tax_amount": 0.0,
+  "tax_rate_percent": null,
+  "total": 25049.7,
+  "amount_paid": null,
+  "payment_method": "Bank transfer",
+  "confidence": {
+    "overall": 0.97,
+    "supplier_name": 0.98,
+    "invoice_number": 0.97,
+    "document_date": 0.97,
+    "total": 0.98
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": null
+}

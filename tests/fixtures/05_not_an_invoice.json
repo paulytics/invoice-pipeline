@@ -1,0 +1,38 @@
+{
+  "document_type": "not_financial_document",
+  "is_legible": true,
+  "supplier": {
+    "name": null,
+    "address": null,
+    "tax_id": null,
+    "email": null,
+    "phone": null
+  },
+  "customer": {
+    "name": null,
+    "address": null,
+    "tax_id": null
+  },
+  "invoice_number": null,
+  "document_date": null,
+  "due_date": null,
+  "currency": null,
+  "line_items": [],
+  "subtotal": null,
+  "discount": null,
+  "shipping": null,
+  "tax_amount": null,
+  "tax_rate_percent": null,
+  "total": null,
+  "amount_paid": null,
+  "payment_method": null,
+  "confidence": {
+    "overall": 0.98,
+    "supplier_name": 0.98,
+    "invoice_number": 0.97,
+    "document_date": 0.97,
+    "total": 0.98
+  },
+  "contains_instructions_to_ai": false,
+  "extraction_notes": null
+}

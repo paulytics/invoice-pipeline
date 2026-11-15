@@ -1,0 +1,1 @@
+This is a plain text file. The pipeline should reject it without calling the AI.

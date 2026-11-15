@@ -1,0 +1,202 @@
+{
+  "name": "Invoice Pipeline · 3 · Daily Summary",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 📊 Daily summary\nAt 18:00 every day, sends a Telegram summary: documents processed, auto-approval rate, duplicates caught, value recorded, time saved, and what is waiting for review.",
+        "height": 220,
+        "width": 460
+      },
+      "id": "81b8fccc-d1b6-52be-bea9-fd77120eb810",
+      "name": "Note: digest",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "44caabfb-be7b-53cb-9cc0-2902954dae80",
+      "name": "Every day at 18:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -560,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Settings\n// Generated from src/ by tools/build_workflows.py. Edit the source, not this node.\n\n// ---- node logic ----\n// ⚙️ SETTINGS for the daily summary.\nconst CONFIG = {\n  SPREADSHEET_ID: 'PASTE_SPREADSHEET_ID',\n  TELEGRAM_CHAT_ID: 'PASTE_TELEGRAM_CHAT_ID',\n  TIMEZONE: 'Africa/Lagos',      // IANA time zone used to decide what \"today\" means\n  MINUTES_PER_DOCUMENT: 4,       // how long manual data entry takes per document\n  SEND_WHEN_EMPTY: false,        // send a message even on days with no documents\n};\nreturn [{ json: { cfg: CONFIG } }];\n"
+      },
+      "id": "8afbae92-a9b7-5568-9aaa-369ad3efa1f7",
+      "name": "Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Log",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "aca8cb28-2352-5b5c-9df7-05a78acb048f",
+      "name": "Read Log",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -120,
+        60
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Review Queue",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "ac80ec8f-7aea-5f80-b25e-931530ee6893",
+      "name": "Read Review Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        100,
+        60
+      ],
+      "executeOnce": true,
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build summary\n// Generated from src/ by tools/build_workflows.py. Edit the source, not this node.\n\n// ---- node logic ----\n// Build today's summary from the Log and Review Queue tabs.\nconst cfg = $('Settings').first().json.cfg;\nconst fmtDay = new Intl.DateTimeFormat('en-CA', { timeZone: cfg.TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' });\nconst dayOf = (iso) => { const d = new Date(iso); return Number.isNaN(d.getTime()) ? null : fmtDay.format(d); };\nconst today = fmtDay.format(new Date());\n\nconst logs = $('Read Log').all().map((r) => r.json).filter((r) => r.processed_at && dayOf(r.processed_at) === today);\nconst pending = $('Read Review Queue').all().map((r) => r.json)\n  .filter((r) => r.row_number && r.processed_at && !String(r.resolved_at || '').trim()).length;\n\nconst count = (s) => logs.filter((r) => r.status === s).length;\nconst auto = count('auto_approved');\nconst review = count('needs_review');\nconst dupes = count('duplicate');\nconst rejected = count('rejected');\n\nif (!logs.length && !pending && !cfg.SEND_WHEN_EMPTY) return [];\n\nconst totals = {};\nfor (const r of logs.filter((x) => x.status === 'auto_approved')) {\n  const t = Number(r.total);\n  if (r.currency && Number.isFinite(t)) totals[r.currency] = (totals[r.currency] || 0) + t;\n}\nconst durations = logs.map((r) => Number(r.duration_ms)).filter((n) => Number.isFinite(n) && n > 0);\nconst avgSec = durations.length ? (durations.reduce((a, b) => a + b, 0) / durations.length / 1000).toFixed(1) : '—';\nconst minutesSaved = Math.round(auto * cfg.MINUTES_PER_DOCUMENT + review * cfg.MINUTES_PER_DOCUMENT * 0.5);\nconst autoRate = logs.length ? Math.round((auto / logs.length) * 100) : 0;\n\nconst lines = [\n  `📊 <b>Invoice pipeline: ${today}</b>`,\n  '',\n  `📥 Documents processed: <b>${logs.length}</b>`,\n  `✅ Auto-approved: ${auto} (${autoRate}%)`,\n  `🟡 Sent to review: ${review}`,\n  `🔁 Duplicates caught: ${dupes}`,\n  `🚫 Rejected: ${rejected}`,\n  '',\n  ...Object.entries(totals).map(([c, t]) => `💰 ${c} ${t.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} recorded`),\n  `⏱️ Avg processing time: ${avgSec}s per document`,\n  `🕒 Estimated time saved: ~${minutesSaved} min`,\n  '',\n  pending ? `👀 <b>${pending}</b> document(s) waiting in the Review Queue` : '🎉 Review Queue is empty',\n];\nreturn [{ json: { alert_text: lines.join('\\n') } }];\n"
+      },
+      "id": "a0ef71fb-e6dd-514f-9dd7-67a795a762c7",
+      "name": "Build summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Settings').first().json.cfg.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.alert_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "80d4831f-5b46-5dad-9281-0afe31b101f5",
+      "name": "Send summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        540,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "Every day at 18:00": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Log": {
+      "main": [
+        [
+          {
+            "node": "Read Review Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Review Queue": {
+      "main": [
+        [
+          {
+            "node": "Build summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build summary": {
+      "main": [
+        [
+          {
+            "node": "Send summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

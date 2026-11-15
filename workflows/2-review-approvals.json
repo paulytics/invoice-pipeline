@@ -1,0 +1,733 @@
+{
+  "name": "Invoice Pipeline · 2 · Review Approvals",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 👀 Human-in-the-loop approvals\nEvery 5 minutes this reads the **Review Queue** tab. When someone corrects a row and types **APPROVE** or **REJECT** in `decision`:\n\n- APPROVE → corrected values go to **Invoices** (source = reviewed), file → Processed\n- REJECT → file → Rejected\n- Missing key fields → approval is blocked and you get a Telegram message\n\nEdit the ⚙️ **Settings** node after import.",
+        "height": 320,
+        "width": 520
+      },
+      "id": "2249f588-887e-5dbf-8252-f8160d5a4f65",
+      "name": "Note: review",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -320
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "f8bdfd07-5ad2-5a7a-9415-b7e7eaf45ca9",
+      "name": "Every 5 minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -560,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Settings\n// Generated from src/ by tools/build_workflows.py. Edit the source, not this node.\n\n// ---- node logic ----\n// ⚙️ SETTINGS — use the same values as the main pipeline.\nconst CONFIG = {\n  SPREADSHEET_ID: 'PASTE_SPREADSHEET_ID',\n  FOLDERS: {\n    PROCESSED: 'PASTE_PROCESSED_FOLDER_ID',\n    REJECTED: 'PASTE_REJECTED_FOLDER_ID',\n  },\n  TELEGRAM_CHAT_ID: 'PASTE_TELEGRAM_CHAT_ID',\n  RULES: {},\n};\nreturn [{ json: { cfg: CONFIG } }];\n"
+      },
+      "id": "27e48b44-a29d-5c3c-b6c8-071a996a4bc9",
+      "name": "Settings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -340,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Review Queue",
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "60515a83-0b74-5848-98c1-1b1f3444e57f",
+      "name": "Read Review Queue",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -120,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Pick decided rows\n// Generated from src/ by tools/build_workflows.py. Edit the source, not this node.\n\n// ---- validate.js ----\n// Validation and scoring for extracted invoices/receipts.\n// Pure functions: no n8n globals, so they are unit-tested in tests/.\n\nconst KNOWN_CURRENCIES = new Set([\n  'NGN', 'USD', 'EUR', 'GBP', 'GHS', 'KES', 'ZAR', 'XOF', 'XAF', 'EGP', 'MAD', 'CAD', 'AUD',\n  'JPY', 'CNY', 'INR', 'AED', 'SAR', 'CHF', 'SEK', 'NOK', 'DKK', 'BRL', 'MXN', 'SGD', 'HKD',\n]);\n\nconst COMPANY_SUFFIXES = /\\b(ltd|limited|plc|inc|incorporated|llc|llp|co|company|corp|corporation|enterprises?|ventures?|nig|nigeria|gmbh|sa|bv)\\b/g;\n\nconst isNum = (v) => typeof v === 'number' && Number.isFinite(v);\nconst round2 = (n) => Math.round(n * 100) / 100;\n\nfunction parseIsoDate(value) {\n  if (typeof value !== 'string' || !/^\\d{4}-\\d{2}-\\d{2}$/.test(value)) return null;\n  const d = new Date(value + 'T00:00:00Z');\n  if (Number.isNaN(d.getTime()) || d.toISOString().slice(0, 10) !== value) return null;\n  return d;\n}\n\nfunction normalizeSupplier(name) {\n  return String(name || '')\n    .toLowerCase()\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(COMPANY_SUFFIXES, ' ')\n    .replace(/\\s+/g, '')\n    .trim();\n}\n\nfunction normalizeInvoiceNumber(num) {\n  return String(num || '').toUpperCase().replace(/[^A-Z0-9]/g, '');\n}\n\nfunction buildDedupeKey(x) {\n  const supplier = normalizeSupplier(x?.supplier?.name);\n  const total = isNum(x?.total) ? round2(x.total).toFixed(2) : '';\n  const inv = normalizeInvoiceNumber(x?.invoice_number);\n  if (!supplier || !total) return '';\n  // Invoice number is the strongest key; fall back to date + total for receipts.\n  return inv ? `${supplier}|${inv}|${total}` : `${supplier}|${x?.document_date || 'nodate'}|${total}`;\n}\n\n/**\n * @param {object} x      Extraction returned by the model (matches EXTRACTION_SCHEMA)\n * @param {object} cfg    Thresholds (see DEFAULT_RULES)\n * @param {Date}   now    Injected for testability\n */\nfunction validateExtraction(x, cfg = {}, now = new Date()) {\n  const rules = { ...DEFAULT_RULES, ...cfg };\n  const errors = [];   // must be fixed by a human before posting\n  const warnings = []; // worth a look, but not blocking on their own\n  const err = (code, msg) => errors.push({ code, msg });\n  const warn = (code, msg) => warnings.push({ code, msg });\n\n  if (!x || typeof x !== 'object') {\n    err('NO_DATA', 'The model returned no usable data');\n    return finish();\n  }\n\n  if (x.document_type === 'not_financial_document') {\n    return finish('rejected', 'Not an invoice or receipt');\n  }\n\n  if (x.is_legible === false) err('ILLEGIBLE', 'Document is hard to read (blurry, cropped or damaged)');\n\n  // ---- Required fields -------------------------------------------------\n  if (!x.supplier?.name) err('MISSING_SUPPLIER', 'Supplier name is missing');\n  if (!isNum(x.total)) err('MISSING_TOTAL', 'Total amount is missing');\n  if (!x.currency) err('MISSING_CURRENCY', 'Currency is missing');\n  if (!x.document_date) err('MISSING_DATE', 'Document date is missing');\n  if (x.document_type === 'invoice' && !x.invoice_number) err('MISSING_INVOICE_NO', 'Invoice number is missing');\n\n  // ---- Currency ----------------------------------------------------------\n  if (x.currency) {\n    if (!/^[A-Z]{3}$/.test(x.currency)) err('BAD_CURRENCY', `Currency \"${x.currency}\" is not a 3-letter ISO code`);\n    else if (!KNOWN_CURRENCIES.has(x.currency)) warn('UNUSUAL_CURRENCY', `Unusual currency ${x.currency}`);\n  }\n\n  // ---- Dates -------------------------------------------------------------\n  const today = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));\n  const docDate = x.document_date ? parseIsoDate(x.document_date) : null;\n  if (x.document_date && !docDate) err('BAD_DATE', `Date \"${x.document_date}\" is not a valid YYYY-MM-DD date`);\n  if (docDate) {\n    const ageDays = (today - docDate) / 86400000;\n    if (ageDays < -1) err('FUTURE_DATE', `Document date ${x.document_date} is in the future`);\n    else if (ageDays > rules.max_age_days) warn('OLD_DOCUMENT', `Document is ${Math.round(ageDays)} days old`);\n  }\n  if (x.due_date) {\n    const due = parseIsoDate(x.due_date);\n    if (!due) warn('BAD_DUE_DATE', `Due date \"${x.due_date}\" is not a valid date`);\n    else if (docDate && due < docDate) err('DUE_BEFORE_ISSUE', 'Due date is before the issue date');\n  }\n\n  // ---- Arithmetic --------------------------------------------------------\n  const total = isNum(x.total) ? x.total : null;\n  const tol = (ref) => Math.max(rules.abs_tolerance, Math.abs(ref || 0) * rules.pct_tolerance);\n  const near = (a, b) => Math.abs(a - b) <= tol(b);\n\n  if (total !== null) {\n    if (total === 0) err('ZERO_TOTAL', 'Total is zero');\n    if (total < 0 && x.document_type !== 'credit_note') err('NEGATIVE_TOTAL', 'Negative total on a non-credit-note');\n  }\n\n  const items = Array.isArray(x.line_items) ? x.line_items : [];\n  items.forEach((li, i) => {\n    if (isNum(li.quantity) && isNum(li.unit_price) && isNum(li.amount)) {\n      const expected = round2(li.quantity * li.unit_price);\n      if (!near(li.amount, expected)) {\n        warn('LINE_MATH', `Line ${i + 1} (${li.description}): ${li.quantity} × ${li.unit_price} = ${expected}, but shows ${li.amount}`);\n      }\n    }\n  });\n\n  const itemAmounts = items.map((li) => li.amount).filter(isNum);\n  const itemsSum = itemAmounts.length ? round2(itemAmounts.reduce((a, b) => a + b, 0)) : null;\n  const subtotal = isNum(x.subtotal) ? x.subtotal : null;\n\n  if (itemsSum !== null && itemAmounts.length === items.length && subtotal !== null && !near(itemsSum, subtotal)) {\n    err('ITEMS_NE_SUBTOTAL', `Line items add up to ${itemsSum} but subtotal shows ${subtotal}`);\n  }\n\n  const base = subtotal !== null ? subtotal : (itemsSum !== null && itemAmounts.length === items.length ? itemsSum : null);\n  if (base !== null && total !== null) {\n    const expectedTotal = round2(\n      base + (isNum(x.tax_amount) ? x.tax_amount : 0) - (isNum(x.discount) ? Math.abs(x.discount) : 0) + (isNum(x.shipping) ? x.shipping : 0),\n    );\n    if (!near(total, expectedTotal)) {\n      err('TOTAL_MISMATCH', `Subtotal + tax − discount + charges = ${expectedTotal}, but total shows ${total}`);\n    }\n  }\n\n  if (isNum(x.tax_rate_percent) && isNum(x.tax_amount) && base !== null && x.tax_rate_percent > 0) {\n    const taxable = base - (isNum(x.discount) ? Math.abs(x.discount) : 0);\n    const expectedTax = round2(taxable * x.tax_rate_percent / 100);\n    const expectedTaxNoDiscount = round2(base * x.tax_rate_percent / 100);\n    if (!near(x.tax_amount, expectedTax) && !near(x.tax_amount, expectedTaxNoDiscount)) {\n      warn('TAX_MATH', `${x.tax_rate_percent}% tax should be about ${expectedTax}, but shows ${x.tax_amount}`);\n    }\n  }\n  if (isNum(x.tax_amount) && base !== null && base > 0 && x.tax_amount / base > rules.max_tax_ratio) {\n    warn('HIGH_TAX', `Tax is ${Math.round((x.tax_amount / base) * 100)}% of subtotal`);\n  }\n  if (isNum(x.amount_paid) && total !== null && x.amount_paid > total + tol(total)) {\n    warn('OVERPAID', `Amount paid (${x.amount_paid}) is more than the total (${total})`);\n  }\n  if (total !== null && total >= rules.high_value_threshold) {\n    warn('HIGH_VALUE', `High-value document (${total}); please double-check`);\n  }\n\n  // ---- Model confidence --------------------------------------------------\n  const conf = x.confidence || {};\n  if (isNum(conf.overall) && conf.overall < rules.min_confidence) {\n    err('LOW_CONFIDENCE', `Model confidence is ${Math.round(conf.overall * 100)}%`);\n  }\n  ['supplier_name', 'invoice_number', 'document_date', 'total'].forEach((f) => {\n    if (isNum(conf[f]) && conf[f] < rules.min_field_confidence) {\n      warn('LOW_FIELD_CONFIDENCE', `Low confidence on ${f.replace('_', ' ')} (${Math.round(conf[f] * 100)}%)`);\n    }\n  });\n\n  // ---- Prompt injection --------------------------------------------------\n  // A document that tries to instruct the AI is never auto-approved.\n  if (x.contains_instructions_to_ai === true) {\n    err('PROMPT_INJECTION', 'Document contains hidden instructions aimed at the AI; check it was not tampered with');\n  }\n\n  return finish();\n\n  function finish(forcedStatus, reason) {\n    const score = Math.max(0, 100 - errors.length * rules.error_penalty - warnings.length * rules.warning_penalty);\n    let status = forcedStatus;\n    if (!status) {\n      status = errors.length === 0 && score >= rules.auto_approve_min_score ? 'auto_approved' : 'needs_review';\n    }\n    // A forced reject (non-financial document) gets score 0 so it never looks \"good\" in reports.\n    return {\n      status,\n      score: forcedStatus === 'rejected' ? 0 : score,\n      errors,\n      warnings,\n      reason: reason || null,\n      dedupe_key: status === 'rejected' ? '' : buildDedupeKey(x),\n      items_sum: x ? (() => { const a = (x.line_items || []).map((l) => l.amount).filter(isNum); return a.length ? round2(a.reduce((p, c) => p + c, 0)) : null; })() : null,\n    };\n  }\n}\n\nconst DEFAULT_RULES = {\n  abs_tolerance: 0.05,          // currency units of rounding slack\n  pct_tolerance: 0.005,         // 0.5% relative slack\n  min_confidence: 0.80,         // below this overall confidence -> review\n  min_field_confidence: 0.70,   // below this on a key field -> warning\n  auto_approve_min_score: 80,   // with zero errors, score must be >= this\n  error_penalty: 25,\n  warning_penalty: 8,\n  max_age_days: 730,\n  max_tax_ratio: 0.30,\n  high_value_threshold: 5000000, // in document currency; set per business\n};\n\n// ---- format.js ----\n// Turns a validated document into sheet rows and Telegram messages.\n\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nfunction money(n, currency) {\n  if (typeof n !== 'number' || !Number.isFinite(n)) return '—';\n  const formatted = n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\n  return currency ? `${currency} ${formatted}` : formatted;\n}\n\nfunction issuesText(v) {\n  return [...(v.errors || []).map((e) => `❌ ${e.msg}`), ...(v.warnings || []).map((w) => `⚠️ ${w.msg}`)].join('\\n');\n}\n\n/** Flat object whose keys match the sheet headers exactly. */\nfunction toRow(doc) {\n  const x = doc.extraction || {};\n  const v = doc.validation || {};\n  return {\n    processed_at: doc.processed_at,\n    status: v.status,\n    score: v.score,\n    confidence: typeof x.confidence?.overall === 'number' ? x.confidence.overall : '',\n    document_type: x.document_type || '',\n    supplier_name: x.supplier?.name || '',\n    supplier_tax_id: x.supplier?.tax_id || '',\n    customer_name: x.customer?.name || '',\n    invoice_number: x.invoice_number || '',\n    document_date: x.document_date || '',\n    due_date: x.due_date || '',\n    currency: x.currency || '',\n    subtotal: x.subtotal ?? '',\n    discount: x.discount ?? '',\n    shipping: x.shipping ?? '',\n    tax_amount: x.tax_amount ?? '',\n    total: x.total ?? '',\n    amount_paid: x.amount_paid ?? '',\n    payment_method: x.payment_method || '',\n    line_item_count: Array.isArray(x.line_items) ? x.line_items.length : 0,\n    line_items_json: JSON.stringify(x.line_items || []),\n    issues: issuesText(v).replace(/\\n/g, ' | '),\n    extraction_notes: x.extraction_notes || '',\n    file_name: doc.file.name,\n    file_id: doc.file.id,\n    file_link: doc.file.link,\n    dedupe_key: v.dedupe_key || '',\n    model: doc.model || '',\n    execution_id: doc.execution_id || '',\n    duration_ms: doc.duration_ms ?? '',\n  };\n}\n\nfunction telegramText(doc, sheetUrl) {\n  const x = doc.extraction || {};\n  const v = doc.validation || {};\n  const head = {\n    needs_review: '🟡 <b>Invoice needs review</b>',\n    duplicate: '🔁 <b>Duplicate document skipped</b>',\n    rejected: '🚫 <b>Document rejected</b>',\n    auto_approved: '✅ <b>Invoice processed</b>',\n  }[v.status] || '<b>Document processed</b>';\n\n  const lines = [\n    head,\n    `📄 <a href=\"${esc(doc.file.link)}\">${esc(doc.file.name)}</a>`,\n  ];\n  if (x.supplier?.name) lines.push(`🏢 ${esc(x.supplier.name)}${x.invoice_number ? ` · #${esc(x.invoice_number)}` : ''}`);\n  if (typeof x.total === 'number') lines.push(`💰 ${esc(money(x.total, x.currency))}${x.document_date ? ` · ${esc(x.document_date)}` : ''}`);\n  if (v.status !== 'rejected' && v.status !== 'duplicate') lines.push(`📊 Score ${v.score}/100`);\n  if (v.reason) lines.push(`ℹ️ ${esc(v.reason)}`);\n  const issues = issuesText(v);\n  if (issues) lines.push('', esc(issues));\n  if (v.status === 'needs_review' && sheetUrl) {\n    lines.push('', `👉 Fix any wrong values in the <a href=\"${esc(sheetUrl)}\">Review Queue</a>, then set <b>decision</b> to APPROVE or REJECT.`);\n  }\n  return lines.join('\\n').slice(0, 4000); // Telegram limit is 4096\n}\n\n// ---- node logic ----\n// Find Review Queue rows where a person set decision = APPROVE or REJECT\n// and that have not been handled yet. Uses the reviewer's corrected values.\nconst cfg = $('Settings').first().json.cfg;\nconst now = new Date().toISOString();\nconst num = (v) => {\n  if (v === '' || v === null || v === undefined) return null;\n  if (typeof v === 'number') return v;\n  const n = Number(String(v).replace(/,/g, '').replace(/[^0-9.\\-]/g, ''));\n  return Number.isFinite(n) ? n : null;\n};\nconst str = (v) => (v === null || v === undefined ? '' : String(v).trim());\n\nconst out = [];\nfor (const { json: r } of $input.all()) {\n  if (!r.row_number || str(r.resolved_at)) continue;\n  const decision = str(r.decision).toUpperCase();\n  if (decision !== 'APPROVE' && decision !== 'REJECT') continue;\n\n  const file = { id: str(r.file_id), name: str(r.file_name), link: str(r.file_link) };\n  const base = { row_number: r.row_number, decision, file, resolved_at: now };\n\n  if (decision === 'REJECT') {\n    out.push({ json: { ...base, action: 'reject', new_decision: 'REJECT', resolution: 'Rejected by reviewer' } });\n    continue;\n  }\n\n  let lineItems = [];\n  try { lineItems = JSON.parse(str(r.line_items_json) || '[]'); } catch (e) { lineItems = []; }\n\n  const x = {\n    document_type: str(r.document_type) || 'invoice',\n    supplier: { name: str(r.supplier_name) || null, tax_id: str(r.supplier_tax_id) || null },\n    customer: { name: str(r.customer_name) || null },\n    invoice_number: str(r.invoice_number) || null,\n    document_date: str(r.document_date) || null,\n    due_date: str(r.due_date) || null,\n    currency: str(r.currency).toUpperCase() || null,\n    subtotal: num(r.subtotal), discount: num(r.discount), shipping: num(r.shipping),\n    tax_amount: num(r.tax_amount), total: num(r.total), amount_paid: num(r.amount_paid),\n    payment_method: str(r.payment_method) || null,\n    line_items: lineItems,\n  };\n\n  const missing = [];\n  if (!x.supplier.name) missing.push('supplier_name');\n  if (x.total === null) missing.push('total');\n  if (!x.currency) missing.push('currency');\n  if (!x.document_date) missing.push('document_date');\n  if (missing.length) {\n    out.push({ json: {\n      ...base, action: 'blocked', new_decision: '', resolved_at: '',\n      resolution: `Not posted: please fill in ${missing.join(', ')} and set decision again`,\n      alert_text: `⛔ <b>Approval blocked</b>\\n📄 <a href=\"${esc(file.link)}\">${esc(file.name)}</a>\\nMissing: ${esc(missing.join(', '))}`,\n    } });\n    continue;\n  }\n\n  // Re-check the corrected values. Reviewers can still approve with errors,\n  // but the result is recorded so it is visible in the Invoices tab.\n  const v = validateExtraction({ ...x, confidence: {}, is_legible: true }, cfg.RULES);\n  const remaining = issuesText(v).replace(/\\n/g, ' | ');\n  out.push({ json: {\n    ...base, action: 'post', new_decision: 'APPROVE',\n    resolution: remaining ? `Posted with notes: ${remaining}` : 'Posted to Invoices',\n    invoice_row: {\n      processed_at: now,\n      source: 'reviewed',\n      document_type: x.document_type,\n      supplier_name: x.supplier.name,\n      supplier_tax_id: x.supplier.tax_id || '',\n      customer_name: x.customer.name || '',\n      invoice_number: x.invoice_number || '',\n      document_date: x.document_date,\n      due_date: x.due_date || '',\n      currency: x.currency,\n      subtotal: x.subtotal ?? '', discount: x.discount ?? '', shipping: x.shipping ?? '',\n      tax_amount: x.tax_amount ?? '', total: x.total, amount_paid: x.amount_paid ?? '',\n      payment_method: x.payment_method || '',\n      line_item_count: lineItems.length,\n      line_items_json: JSON.stringify(lineItems),\n      score: v.score,\n      confidence: num(r.confidence) ?? '',\n      file_name: file.name, file_link: file.link, file_id: file.id,\n      dedupe_key: buildDedupeKey(x),\n    },\n  } });\n}\nreturn out;\n"
+      },
+      "id": "930cdf53-87a7-5b86-9247-543c2ad8073b",
+      "name": "Pick decided rows",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        100,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "dc202c83-1497-5f54-9b84-185673da5030",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "post",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Post"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "32565860-29d8-5fb3-bedd-39a6b4319dfe",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "reject",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Reject"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "afebd601-6675-5037-9a0f-6d3dca2118b5",
+                    "leftValue": "={{ $json.action }}",
+                    "rightValue": "blocked",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Blocked"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ab79bf12-cd45-5183-831c-3e24452adb0a",
+      "name": "Route by decision",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        320,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Invoices",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "processed_at": "={{ $json.invoice_row.processed_at }}",
+            "source": "={{ $json.invoice_row.source }}",
+            "document_type": "={{ $json.invoice_row.document_type }}",
+            "supplier_name": "={{ $json.invoice_row.supplier_name }}",
+            "supplier_tax_id": "={{ $json.invoice_row.supplier_tax_id }}",
+            "customer_name": "={{ $json.invoice_row.customer_name }}",
+            "invoice_number": "={{ $json.invoice_row.invoice_number }}",
+            "document_date": "={{ $json.invoice_row.document_date }}",
+            "due_date": "={{ $json.invoice_row.due_date }}",
+            "currency": "={{ $json.invoice_row.currency }}",
+            "subtotal": "={{ $json.invoice_row.subtotal }}",
+            "discount": "={{ $json.invoice_row.discount }}",
+            "shipping": "={{ $json.invoice_row.shipping }}",
+            "tax_amount": "={{ $json.invoice_row.tax_amount }}",
+            "total": "={{ $json.invoice_row.total }}",
+            "amount_paid": "={{ $json.invoice_row.amount_paid }}",
+            "payment_method": "={{ $json.invoice_row.payment_method }}",
+            "line_item_count": "={{ $json.invoice_row.line_item_count }}",
+            "line_items_json": "={{ $json.invoice_row.line_items_json }}",
+            "score": "={{ $json.invoice_row.score }}",
+            "confidence": "={{ $json.invoice_row.confidence }}",
+            "file_name": "={{ $json.invoice_row.file_name }}",
+            "file_link": "={{ $json.invoice_row.file_link }}",
+            "file_id": "={{ $json.invoice_row.file_id }}",
+            "dedupe_key": "={{ $json.invoice_row.dedupe_key }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "processed_at",
+              "displayName": "processed_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "document_type",
+              "displayName": "document_type",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "supplier_name",
+              "displayName": "supplier_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "supplier_tax_id",
+              "displayName": "supplier_tax_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "customer_name",
+              "displayName": "customer_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "invoice_number",
+              "displayName": "invoice_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "document_date",
+              "displayName": "document_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "due_date",
+              "displayName": "due_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "currency",
+              "displayName": "currency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "subtotal",
+              "displayName": "subtotal",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "discount",
+              "displayName": "discount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "shipping",
+              "displayName": "shipping",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "tax_amount",
+              "displayName": "tax_amount",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "total",
+              "displayName": "total",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "amount_paid",
+              "displayName": "amount_paid",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "payment_method",
+              "displayName": "payment_method",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "line_item_count",
+              "displayName": "line_item_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "line_items_json",
+              "displayName": "line_items_json",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "confidence",
+              "displayName": "confidence",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "file_name",
+              "displayName": "file_name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "file_link",
+              "displayName": "file_link",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "file_id",
+              "displayName": "file_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "dedupe_key",
+              "displayName": "dedupe_key",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "705d5ea1-cb8e-58f4-b038-2a8793e8d420",
+      "name": "Add to Invoices",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        600,
+        -140
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.file.id }}",
+          "mode": "id"
+        },
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.FOLDERS.PROCESSED }}",
+          "mode": "id"
+        }
+      },
+      "id": "21ca2331-308f-5204-83b4-2584029ea682",
+      "name": "Move to Processed",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        600,
+        20
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.file.id }}",
+          "mode": "id"
+        },
+        "driveId": {
+          "__rl": true,
+          "value": "My Drive",
+          "mode": "list",
+          "cachedResultName": "My Drive",
+          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.FOLDERS.REJECTED }}",
+          "mode": "id"
+        }
+      },
+      "id": "a3af1589-9dbf-5880-9e8e-30a136f193a8",
+      "name": "Move to Rejected",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        600,
+        200
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Settings').first().json.cfg.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.alert_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "e240628e-b3a9-5e36-9fab-c1b0a1379e0f",
+      "name": "Alert: approval blocked",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        600,
+        360
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Settings').first().json.cfg.SPREADSHEET_ID }}",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Review Queue",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "row_number": "={{ $('Pick decided rows').item.json.row_number }}",
+            "decision": "={{ $('Pick decided rows').item.json.new_decision }}",
+            "resolved_at": "={{ $('Pick decided rows').item.json.resolved_at }}",
+            "resolution": "={{ $('Pick decided rows').item.json.resolution }}"
+          },
+          "matchingColumns": [
+            "row_number"
+          ],
+          "schema": [
+            {
+              "id": "row_number",
+              "displayName": "row_number",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "decision",
+              "displayName": "decision",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resolved_at",
+              "displayName": "resolved_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "resolution",
+              "displayName": "resolution",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "id": "b9d65f0b-4b55-58e8-b6c6-a4b582fde5a4",
+      "name": "Mark row resolved",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        880,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Every 5 minutes": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Read Review Queue",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Review Queue": {
+      "main": [
+        [
+          {
+            "node": "Pick decided rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick decided rows": {
+      "main": [
+        [
+          {
+            "node": "Route by decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by decision": {
+      "main": [
+        [
+          {
+            "node": "Add to Invoices",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Move to Processed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark row resolved",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Move to Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark row resolved",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Alert: approval blocked",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Invoices": {
+      "main": [
+        [
+          {
+            "node": "Mark row resolved",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}

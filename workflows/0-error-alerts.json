@@ -1,0 +1,96 @@
+{
+  "name": "Invoice Pipeline · 0 · Error Alerts",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## 🔥 Error alerts\nSet this as the **Error Workflow** in the settings of workflows 1, 2 and 3. Any failure sends a Telegram message with the node, the error and a link to the execution.\n\nPut your chat ID in the **Format alert** node.",
+        "height": 220,
+        "width": 440
+      },
+      "id": "68b87f84-0f33-5bdd-9645-8d80ee0e25db",
+      "name": "Note: errors",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        -240
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "0fc2bc93-a265-5d52-a75b-1c3d93ff8842",
+      "name": "On workflow error",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        -480,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format alert\n// Generated from src/ by tools/build_workflows.py. Edit the source, not this node.\n\n// ---- node logic ----\n// Format an n8n error event as a Telegram alert.\nconst TELEGRAM_CHAT_ID = 'PASTE_TELEGRAM_CHAT_ID';\nconst e = $input.first().json;\nconst esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst wfName = e.workflow?.name || 'Unknown workflow';\nconst err = e.execution?.error || e.trigger?.error || {};\nconst node = e.execution?.lastNodeExecuted || err.node?.name || 'unknown';\nconst url = e.execution?.url;\n\nconst lines = [\n  '🔥 <b>Automation failed</b>',\n  `Workflow: <b>${esc(wfName)}</b>`,\n  `Node: ${esc(node)}`,\n  `Error: <code>${esc(String(err.message || 'No message').slice(0, 500))}</code>`,\n];\nif (err.description) lines.push(esc(String(err.description).slice(0, 500)));\nif (url) lines.push(`<a href=\"${esc(url)}\">Open the failed execution</a>`);\nlines.push('', 'Files that failed stay where they are. Fix the problem, then use Retry on the execution page.');\n\nreturn [{ json: { chat_id: TELEGRAM_CHAT_ID, alert_text: lines.join('\\n') } }];\n"
+      },
+      "id": "3627096d-61da-5642-9ae1-767e0d773255",
+      "name": "Format alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -260,
+        60
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "={{ $json.alert_text }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "180fa693-4652-538f-9523-97be9e868bdf",
+      "name": "Send alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        -40,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "On workflow error": {
+      "main": [
+        [
+          {
+            "node": "Format alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format alert": {
+      "main": [
+        [
+          {
+            "node": "Send alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
